@@ -97,7 +97,7 @@ disable_negated_services
 
 # Warn users who aren't on an explicitly supported distro, but allow them to
 # override check and attempt installation with ``FORCE=yes ./stack``
-if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|f16|f17) ]]; then
+if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|f16|f17|gentoo) ]]; then
     echo "WARNING: this script has not been tested on $DISTRO"
     if [[ "$FORCE" != "yes" ]]; then
         echo "If you wish to run this script anyway run with FORCE=yes"
@@ -106,10 +106,27 @@ if [[ ! ${DISTRO} =~ (oneiric|precise|quantal|raring|f16|f17) ]]; then
 fi
 
 # Disallow qpid on oneiric
-if [ "${DISTRO}" = "oneiric" ] && is_service_enabled qpid ; then
+if [[ ! ${DISTRO} =~ (oneric|gentoo)  ]] && is_service_enabled qpid; then
+ if [ "${DISTRO}" = "oneiric" ]; then
     # Qpid was introduced in precise
     echo "You must use Ubuntu Precise or newer for Qpid support."
     exit 1
+ else
+    echo "Qpid is not available on default Gentoo portage."
+    exit 1
+ fi
+fi
+
+# Gentoo default python is version 3. You have to change to python2
+if [[ "${DISTRO}" = "gentoo" ]]; then
+ if [[ ! $(eselect python show) =~ "python2" ]]; then
+  echo "OpenStack is developed with python2."
+  echo "Check your available python version using"
+  echo "  eselect python list"
+  echo "and set default interpreter with one of available python2 using"
+  echo "  eselect python set <target>"
+  exit 1
+ fi
 fi
 
 # ``stack.sh`` keeps function libraries here
@@ -260,6 +277,11 @@ FLOATING_RANGE=${FLOATING_RANGE:-172.24.4.224/28}
 FIXED_RANGE=${FIXED_RANGE:-10.0.0.0/24}
 FIXED_NETWORK_SIZE=${FIXED_NETWORK_SIZE:-256}
 NETWORK_GATEWAY=${NETWORK_GATEWAY:-10.0.0.1}
+
+# Gentoo doesn't have to always provide iproute2
+if [[ "$os_PACKAGE" = "ebuild" ]]; then
+	is_package_installed iproute2 || install_package iproute2
+fi
 
 # Find the interface used for the default route
 HOST_IP_IFACE=${HOST_IP_IFACE:-$(ip route | sed -n '/^default/{ s/.*dev \(\w\+\)\s\+.*/\1/; p; }')}
@@ -717,8 +739,10 @@ set -o xtrace
 echo_summary "Installing package prerequisites"
 if [[ "$os_PACKAGE" = "deb" ]]; then
     install_package $(get_packages $FILES/apts)
-else
+elif [[ "$os_PACKAGE" = "rpm" ]]; then
     install_package $(get_packages $FILES/rpms)
+elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    install_package $(get_packages $FILES/ebuilds)
 fi
 
 if [[ $SYSLOG != "False" ]]; then
@@ -741,8 +765,10 @@ elif is_service_enabled qpid; then
 elif is_service_enabled zeromq; then
     if [[ "$os_PACKAGE" = "rpm" ]]; then
         install_package zeromq python-zmq
-    else
+    elif [[ "$os_PACKAGE" = "deb" ]]; then
         install_package libzmq1 python-zmq
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    	install_package zeromq pyzmq
     fi
 fi
 
@@ -771,16 +797,22 @@ EOF
         chmod 0600 $HOME/.my.cnf
     fi
     # Install mysql-server
-    install_package mysql-server
+    if [[ "$os_PACKAGE" = "ebuild" ]]; then
+	install_package mysql
+    else
+	install_package mysql-server
+    fi
 fi
 
 if is_service_enabled horizon; then
     if [[ "$os_PACKAGE" = "deb" ]]; then
         # Install apache2, which is NOPRIME'd
         install_package apache2 libapache2-mod-wsgi
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo rm -f /etc/httpd/conf.d/000-*
         install_package httpd mod_wsgi
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    	install_package apache mod_wsgi
     fi
 fi
 
@@ -824,6 +856,24 @@ fi
 echo_summary "Installing Python prerequisites"
 pip_install $(get_packages $FILES/pips | sort -u)
 
+#Some packages are not available as system packages in Gentoo so install
+#trough pip
+if [[ "$os_PACKAGE" = "ebuild" ]]; then
+
+  for svc in horizon nova quantum swift; do
+    is_service_enabled $svc &&
+    	pip_install eventlet
+  done
+
+  if is_service_enabled keystone; then
+    pip_install py-bcrypt
+  fi
+
+  if is_service_enabled nova; then
+    pip_install carrot
+  fi
+
+fi
 
 # Check Out Source
 # ----------------
@@ -984,9 +1034,14 @@ if is_service_enabled rabbit; then
     if [[ "$os_PACKAGE" = "rpm" ]]; then
         # RPM doesn't start the service
         restart_service rabbitmq-server
+
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+	restart_service rabbitmq
+
     fi
     # change the rabbit password since the default is "guest"
     sudo rabbitmqctl change_password guest $RABBIT_PASSWORD
+
 elif is_service_enabled qpid; then
     echo_summary "Starting qpid"
     restart_service qpidd
@@ -999,7 +1054,7 @@ fi
 if is_service_enabled mysql; then
     echo_summary "Configuring and starting MySQL"
 
-    if [[ "$os_PACKAGE" = "deb" ]]; then
+    if [[ ${os_PACKAGE} =~ (deb|ebuild) ]]; then
         MY_CONF=/etc/mysql/my.cnf
         MYSQL=mysql
     else
@@ -1013,6 +1068,12 @@ if is_service_enabled mysql; then
         start_service $MYSQL
         # Set the root password - only works the first time
         sudo mysqladmin -u root password $MYSQL_PASSWORD || true
+
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+	sudo mysql_install_db --user=mysql > /dev/null
+	start_service $MYSQL
+	sudo mysqladmin -u root password $MYSQL_PASSWORD || true
+	echo_summary "It is a good idea to run mysql_secure_installation"
     fi
     # Update the DB to give user ‘$MYSQL_USER’@’%’ full control of the all databases:
     sudo mysql -uroot -p$MYSQL_PASSWORD -h127.0.0.1 -e "GRANT ALL PRIVILEGES ON *.* TO '$MYSQL_USER'@'%' identified by '$MYSQL_PASSWORD';"
@@ -1110,11 +1171,17 @@ if is_service_enabled horizon; then
         # Be a good citizen and use the distro tools here
         sudo touch /etc/$APACHE_NAME/$APACHE_CONF
         sudo a2ensite horizon
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         # Install httpd, which is NOPRIME'd
         APACHE_NAME=httpd
         APACHE_CONF=conf.d/horizon.conf
         sudo sed '/^Listen/s/^.*$/Listen 0.0.0.0:80/' -i /etc/httpd/conf/httpd.conf
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+	APACHE_NAME=apache2
+	APACHE_CONF=vhosts.d/horizon.conf
+	# Disable default config
+	sudo rm -f /etc/apache2/vhosts.d/*default_*vhost.*
+	sudo touch /etc/$APACHE_NAME/$APACHE_CONF
     fi
 
     # Configure apache to run horizon
@@ -1600,7 +1667,7 @@ if is_service_enabled swift; then
     " $FILES/swift/rsyncd.conf | sudo tee /etc/rsyncd.conf
     if [[ "$os_PACKAGE" = "deb" ]]; then
         sudo sed -i '/^RSYNC_ENABLE=false/ { s/false/true/ }' /etc/default/rsync
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo sed -i '/disable *= *yes/ { s/yes/no/ }' /etc/xinetd.d/rsync
     fi
 
@@ -1763,7 +1830,7 @@ EOF
     } && popd >/dev/null
 
    # Start rsync
-    if [[ "$os_PACKAGE" = "deb" ]]; then
+    if [[ ${os_PACKAGE} =~ (deb|ebuild) ]]; then
         sudo /etc/init.d/rsync restart || :
     else
         sudo systemctl start xinetd.service

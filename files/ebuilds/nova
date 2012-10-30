@@ -1,0 +1,42 @@
+dnsmasq
+multipath-tools
+parted
+arping
+mysql # NOPRIME
+mysql-python
+pyxattr
+lxml
+qemu
+gawk
+iptables
+ebtables
+sqlite
+sudo
+libvirt # NOPRIME
+vconfig
+curl
+rabbitmq-server # NOPRIME
+socat
+mox
+paste
+sqlalchemy-migrate
+python-gflags
+greenlet
+libvirt # should use python, and specific target flags
+libxml2 # should use python
+routes
+netaddr
+pastedeploy
+# eventlet must be installed using pip-2.7
+cheetah
+amqplib # carrot must be installed using pip-2.7
+tempita
+sqlalchemy
+suds
+dev-python/lockfile
+m2crypto
+boto
+kombu
+feedparser
+iso8601
+# no qpid on gentoo? is needed?

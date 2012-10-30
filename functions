@@ -245,6 +245,10 @@ GetOSVersion() {
             os_VENDOR=""
         done
         os_PACKAGE="rpm"
+    elif [[ -x $(which emerge 2>/dev/null) ]]; then
+    	os_VENDOR="Gentoo"
+        os_RELEASE=$(eselect --brief --colour=no profile show)
+        os_PACKAGE="ebuild"
     fi
     export os_VENDOR os_RELEASE os_UPDATE os_PACKAGE os_CODENAME
 }
@@ -296,6 +300,8 @@ function GetDistro() {
     elif [[ "$os_VENDOR" =~ (Fedora) ]]; then
         # For Fedora, just use 'f' and the release
         DISTRO="f$os_RELEASE"
+    elif [[ "$os_VENDOR" =~ (Gentoo) ]]; then
+	DISTRO="gentoo"	
     else
         # Catch-all for now is Vendor + Release + Update
         DISTRO="$os_VENDOR-$os_RELEASE.$os_UPDATE"
@@ -540,8 +546,14 @@ function install_package() {
         NO_UPDATE_REPOS=True
 
         apt_get install "$@"
-    else
+    
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         yum_install "$@"
+    
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+
+        emerge_ebuild "$@"
+
     fi
 }
 
@@ -559,8 +571,11 @@ function is_package_installed() {
     if [[ "$os_PACKAGE" = "deb" ]]; then
         dpkg -l "$@" > /dev/null
         return $?
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         rpm --quiet -q "$@"
+        return $?
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+        emerge -qCp "$@" > /dev/null
         return $?
     fi
 }
@@ -591,7 +606,7 @@ function pip_install {
         SUDO_PIP="env"
     else
         SUDO_PIP="sudo"
-        if [[ "$os_PACKAGE" = "deb" ]]; then
+        if [[ ${os_PACKAGE} =~ (deb|ebuild) ]]; then
             CMD_PIP=/usr/bin/pip
         else
             CMD_PIP=/usr/bin/pip-python
@@ -698,8 +713,10 @@ function start_service() {
     fi
     if [[ "$os_PACKAGE" = "deb" ]]; then
         sudo /usr/sbin/service $1 start
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo /sbin/service $1 start
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    	sudo /sbin/rc-service $1 start
     fi
 }
 
@@ -712,8 +729,10 @@ function stop_service() {
     fi
     if [[ "$os_PACKAGE" = "deb" ]]; then
         sudo /usr/sbin/service $1 stop
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo /sbin/service $1 stop
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    	sudo /sbin/rc-service $1 stop
     fi
 }
 
@@ -768,6 +787,7 @@ function upload_image() {
     DISK_FORMAT=""
     CONTAINER_FORMAT=""
     UNPACK=""
+    # FIXME: Maybe check it with file instead of basing on filename?
     case "$IMAGE_FNAME" in
         *.tar.gz|*.tgz)
             # Extract ami and aki files
@@ -849,6 +869,16 @@ function yum_install() {
         yum install -y "$@"
 }
 
+
+# Wrapper for ``emerge`` to use sudo and proxy
+# emerge_ebuild package [package ...]
+function emerge_ebuild() {
+    [[ "$OFFLINE" = "True" ]] && return
+    local sudo="sudo"
+    [[ "$(id -u)" = "0" ]] && sudo="env"
+    $sudo http_proxy=$http_proxy \
+        emerge "$@"
+}
 
 # Restore xtrace
 $XTRACE

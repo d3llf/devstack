@@ -1,0 +1,10 @@
+gcc
+libxml2
+python
+routes
+greenlet
+argparse
+sqlalchemy
+pastedeploy
+pyxattr
+iso8601

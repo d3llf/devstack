@@ -250,8 +250,11 @@ fi
 if [[ "$os_PACKAGE" = "deb" ]]; then
     is_package_installed dpkg
     VAL=$?
-else
+elif [[ "$os_PACKAGE" = "rpm" ]];then
     is_package_installed rpm
+    VAL=$?
+elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    is_package_installed portage
     VAL=$?
 fi
 if [[ "$VAL" -eq 0 ]]; then
@@ -263,8 +266,11 @@ fi
 if [[ "$os_PACKAGE" = "deb" ]]; then
     is_package_installed dpkg bash
     VAL=$?
-else
+elif [[ "$os_PACKAGE" = "rpm" ]]; then
     is_package_installed rpm bash
+    VAL=$?
+elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    is_package_installed portage bash
     VAL=$?
 fi
 if [[ "$VAL" -eq 0 ]]; then

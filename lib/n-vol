@@ -69,8 +69,8 @@ function init_nvol() {
     mkdir -p $NOVA_STATE_PATH/volumes
 
     if sudo vgs $VOLUME_GROUP; then
-        if [[ "$os_PACKAGE" = "rpm" ]]; then
-            # RPM doesn't start the service
+        if [[ ${os_PACKAGE} =~ (rpm|ebuild) ]]; then
+            # RPM nor Gentoo doesn't start the service
             start_service tgtd
         fi
 

@@ -1,0 +1,23 @@
+ebtables
+iptables
+iputils
+mysql-server #NOPRIME
+sudo
+boto
+iso8601
+paste
+routes
+suds
+netaddr
+pastedeploy
+greenlet
+kombu
+# eventlet must be installed by pip-2.7
+sqlalchemy
+mysql-python
+pyudev
+# no qpid for gentoo
+dnsmasq
+rabbitmq-server # NOPRIME
+sqlite
+vconfig

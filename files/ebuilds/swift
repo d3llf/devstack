@@ -1,0 +1,17 @@
+curl
+gcc
+memcached # NOPRIME
+configobj
+coverage
+dev-lang/python
+# eventlet must be installed by pip-2.7
+greenlet
+netifaces
+nose
+pastedeploy
+setuptools
+simplejson
+webob
+pyxattr
+sqlite
+xfsprogs

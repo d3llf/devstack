@@ -1,0 +1,16 @@
+# python-bcrypt should be installed by pip install
+setuptools
+python
+lxml
+pastescript
+pastedeploy
+dev-python/paste
+sqlite
+pysqlite
+sqlalchemy
+mysql-python
+webob
+greenlet
+dev-python/routes
+openldap
+cyrus-sasl

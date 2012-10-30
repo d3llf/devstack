@@ -1,0 +1,23 @@
+# eventlet should be installed by pip-2.7
+apache  # NOPRIME
+mod_wsgi  # NOPRIME
+beautifulsoup
+python-dateutil
+dev-python/paste
+dev-python/pastedeploy
+anyjson
+dev-python/routes
+pyxattr
+sqlalchemy
+webob
+kombu
+pylint
+pep8
+nose
+dev-python/sphinx
+mox
+coverage
+cherrypy # why ?
+sqlalchemy-migrate
+nodejs
+netaddr
