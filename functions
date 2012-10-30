@@ -628,8 +628,10 @@ function restart_service() {
     fi
     if [[ "$os_PACKAGE" = "deb" ]]; then
         sudo /usr/sbin/service $1 restart
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo /sbin/service $1 restart
+    elif [[ "$os_PACKAGE" = "ebuild" ]]; then
+    	sudo rc-service $1 restart
     fi
 }
 
