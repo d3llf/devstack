@@ -1179,9 +1179,11 @@ if is_service_enabled horizon; then
     elif [[ "$os_PACKAGE" = "ebuild" ]]; then
 	APACHE_NAME=apache2
 	APACHE_CONF=vhosts.d/horizon.conf
-	# Disable default config
-	sudo rm -f /etc/apache2/vhosts.d/*default_*vhost.*
 	sudo touch /etc/$APACHE_NAME/$APACHE_CONF
+	# Enable WSGI for Apache if it's not enabled.
+	grep -E "^APACHE2_OPTS=\".*-D WSGI.*$" /etc/conf.d/apache2 ||
+	 sed -i 's/APACHE2_OPTS="/APACHE2_OPTS="-D WSGI /g' /etc/conf.d/apache2
+
     fi
 
     # Configure apache to run horizon
