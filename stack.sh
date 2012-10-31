@@ -746,14 +746,14 @@ elif [[ "$os_PACKAGE" = "ebuild" ]]; then
 fi
 
 if [[ $SYSLOG != "False" ]]; then
-    install_package rsyslog-relp
+    is_package_installed rsyslog-relp || install_package rsyslog-relp
 fi
 
 if is_service_enabled rabbit; then
     # Install rabbitmq-server
     # the temp file is necessary due to LP: #878600
     tfile=$(mktemp)
-    install_package rabbitmq-server > "$tfile" 2>&1
+    is_package_installed || install_package rabbitmq-server > "$tfile" 2>&1
     cat "$tfile"
     rm -f "$tfile"
 elif is_service_enabled qpid; then
@@ -768,7 +768,7 @@ elif is_service_enabled zeromq; then
     elif [[ "$os_PACKAGE" = "deb" ]]; then
         install_package libzmq1 python-zmq
     elif [[ "$os_PACKAGE" = "ebuild" ]]; then
-    	install_package zeromq pyzmq
+    	is_package_installed zeromq pyzmq || install_package zeromq pyzmq
     fi
 fi
 
@@ -798,7 +798,7 @@ EOF
     fi
     # Install mysql-server
     if [[ "$os_PACKAGE" = "ebuild" ]]; then
-	install_package mysql
+	is_package_installed mysql || install_package mysql
     else
 	install_package mysql-server
     fi
@@ -812,7 +812,7 @@ if is_service_enabled horizon; then
         sudo rm -f /etc/httpd/conf.d/000-*
         install_package httpd mod_wsgi
     elif [[ "$os_PACKAGE" = "ebuild" ]]; then
-    	install_package apache mod_wsgi
+    	is_package_installed apache mod_wsgi || install_package apache mod_wsgi
     fi
 fi
 
@@ -844,7 +844,7 @@ TRACK_DEPENDS=${TRACK_DEPENDS:-False}
 # Install python packages into a virtualenv so that we can track them
 if [[ $TRACK_DEPENDS = True ]] ; then
     echo_summary "Installing Python packages into a virtualenv $DEST/.venv"
-    install_package python-virtualenv
+    is_package_installed python-virtualenv || install_package python-virtualenv
 
     rm -rf $DEST/.venv
     virtualenv --system-site-packages $DEST/.venv
@@ -1182,8 +1182,7 @@ if is_service_enabled horizon; then
 	sudo touch /etc/$APACHE_NAME/$APACHE_CONF
 	# Enable WSGI for Apache if it's not enabled.
 	grep -E "^APACHE2_OPTS=\".*-D WSGI.*$" /etc/conf.d/apache2 ||
-	 sed -i 's/APACHE2_OPTS="/APACHE2_OPTS="-D WSGI /g' /etc/conf.d/apache2
-
+	sudo sed -i 's/APACHE2_OPTS="/APACHE2_OPTS="-D WSGI /g' /etc/conf.d/apache2
     fi
 
     # Configure apache to run horizon
