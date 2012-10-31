@@ -9,3 +9,4 @@ pastedeploy
 pyxattr
 iso8601
 requests
+wsgiref
