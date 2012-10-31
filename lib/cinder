@@ -170,7 +170,7 @@ function init_cinder() {
         mkdir -p $CINDER_STATE_PATH/volumes
 
         if sudo vgs $VOLUME_GROUP; then
-            if [[ ${os_PACKAGE} = (rpm|ebuild) ]]; then
+            if [[ ${os_PACKAGE} =~ (rpm|ebuild) ]]; then
                 # RPM nor Gentoo doesn't start the service
                 start_service tgtd
             fi

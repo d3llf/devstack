@@ -631,7 +631,7 @@ function restart_service() {
     elif [[ "$os_PACKAGE" = "rpm" ]]; then
         sudo /sbin/service $1 restart
     elif [[ "$os_PACKAGE" = "ebuild" ]]; then
-    	sudo rc-service $1 restart
+        sudo /sbin/rc-service $1 restart
     fi
 }
 
