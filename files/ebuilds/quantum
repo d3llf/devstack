@@ -12,7 +12,7 @@ netaddr
 pastedeploy
 greenlet
 kombu
-# eventlet must be installed by pip-2.7
+eventlet
 sqlalchemy
 mysql-python
 pyudev

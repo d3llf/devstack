@@ -4,7 +4,7 @@ memcached # NOPRIME
 configobj
 coverage
 dev-lang/python
-# eventlet must be installed by pip-2.7
+eventlet
 greenlet
 netifaces
 nose
@@ -15,3 +15,4 @@ webob
 pyxattr
 sqlite
 xfsprogs
+xinetd

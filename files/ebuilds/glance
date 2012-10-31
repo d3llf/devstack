@@ -1,12 +1,13 @@
 gcc
 libxml2
 python
+eventlet
 routes
 greenlet
 argparse
 sqlalchemy
+wsgiref
 pastedeploy
 pyxattr
 iso8601
 requests
-wsgiref

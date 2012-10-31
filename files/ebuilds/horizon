@@ -1,7 +1,8 @@
-# eventlet should be installed by pip-2.7
+django-registration
 apache  # NOPRIME
 mod_wsgi  # NOPRIME
 beautifulsoup
+boto
 python-dateutil
 dev-python/paste
 dev-python/pastedeploy
@@ -13,9 +14,13 @@ webob
 kombu
 pylint
 pep8
+eventlet
+greenlet
+httplib2
 nose
 dev-python/sphinx
 mox
+kombu
 coverage
 cherrypy # why ?
 sqlalchemy-migrate

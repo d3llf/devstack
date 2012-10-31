@@ -1,3 +1,4 @@
+iputils
 dnsmasq
 multipath-tools
 parted
@@ -26,10 +27,11 @@ libvirt # should use python, and specific target flags
 libxml2 # should use python
 routes
 netaddr
+paramiko
 pastedeploy
-# eventlet must be installed using pip-2.7
+eventlet
 cheetah
-amqplib # carrot must be installed using pip-2.7
+carrot
 tempita
 sqlalchemy
 suds
