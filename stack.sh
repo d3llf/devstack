@@ -1181,7 +1181,7 @@ if is_service_enabled horizon; then
 	APACHE_CONF=vhosts.d/horizon.conf
 	sudo touch /etc/$APACHE_NAME/$APACHE_CONF
 	# Enable WSGI for Apache if it's not enabled.
-	grep -E "^APACHE2_OPTS=\".*-D WSGI.*$" /etc/conf.d/apache2 ||
+	grep -E "^APACHE2_OPTS=\".*-D WSGI.*$" /etc/conf.d/apache2 >/dev/null ||
 	sudo sed -i 's/APACHE2_OPTS="/APACHE2_OPTS="-D WSGI /g' /etc/conf.d/apache2
     fi
 

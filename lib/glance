@@ -28,6 +28,7 @@ set +o xtrace
 
 # Set up default directories
 GLANCE_DIR=$DEST/glance
+GLANCE_BIN_DIR=$GLANCE_DIR/bin
 GLANCECLIENT_DIR=$DEST/python-glanceclient
 GLANCE_CACHE_DIR=${GLANCE_CACHE_DIR:=$DATA_DIR/glance/cache}
 GLANCE_IMAGE_DIR=${GLANCE_IMAGE_DIR:=$DATA_DIR/glance/images}
