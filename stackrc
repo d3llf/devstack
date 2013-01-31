@@ -6,19 +6,28 @@ RC_DIR=$(cd $(dirname "$BASH_SOURCE") && pwd)
 # Destination path for installation
 DEST=/opt/stack
 
+# Destination for working data
+DATA_DIR=${DEST}/data
+
+# Select the default database
+DATABASE_TYPE=mysql
+
+# Determine stack user
+if [[ $EUID -eq 0 ]]; then
+    STACK_USER=stack
+else
+    STACK_USER=$(whoami)
+fi
+
 # Specify which services to launch.  These generally correspond to
 # screen tabs. To change the default list, use the ``enable_service`` and
 # ``disable_service`` functions in ``localrc``.
 # For example, to enable Swift add this to ``localrc``:
 # enable_service swift
-#
-# And to disable Cinder and use Nova Volumes instead:
-# disable_service c-api c-sch c-vol cinder
-# enable_service n-vol
-ENABLED_SERVICES=g-api,g-reg,key,n-api,n-crt,n-obj,n-cpu,n-net,cinder,c-sch,c-api,c-vol,n-sch,n-novnc,n-xvnc,n-cauth,horizon,mysql,rabbit
+ENABLED_SERVICES=g-api,g-reg,key,n-api,n-crt,n-obj,n-cpu,n-net,n-cond,cinder,c-sch,c-api,c-vol,n-sch,n-novnc,n-xvnc,n-cauth,horizon,rabbit,tempest,$DATABASE_TYPE
 
 # Set the default Nova APIs to enable
-NOVA_ENABLED_APIS=ec2,osapi_compute,osapi_volume,metadata
+NOVA_ENABLED_APIS=ec2,osapi_compute,metadata
 
 # Repositories
 # ------------
@@ -28,8 +37,12 @@ NOVA_ENABLED_APIS=ec2,osapi_compute,osapi_volume,metadata
 GIT_BASE=https://github.com
 
 # metering service
-CEILOMETER_REPO=https://github.com/stackforge/ceilometer.git
+CEILOMETER_REPO=${GIT_BASE}/openstack/ceilometer.git
 CEILOMETER_BRANCH=master
+
+# ceilometer client library
+CEILOMETERCLIENT_REPO=${GIT_BASE}/openstack/python-ceilometerclient
+CEILOMETERCLIENT_BRANCH=master
 
 # volume service
 CINDER_REPO=${GIT_BASE}/openstack/cinder
@@ -69,6 +82,10 @@ KEYSTONE_BRANCH=master
 NOVNC_REPO=https://github.com/kanaka/noVNC.git
 NOVNC_BRANCH=master
 
+# a websockets/html5 or flash powered SPICE console for vm instances
+SPICE_REPO=http://anongit.freedesktop.org/git/spice/spice-html5.git
+SPICE_BRANCH=master
+
 # django powered web control panel for openstack
 HORIZON_REPO=${GIT_BASE}/openstack/horizon.git
 HORIZON_BRANCH=master
@@ -90,20 +107,35 @@ QUANTUM_REPO=${GIT_BASE}/openstack/quantum
 QUANTUM_BRANCH=master
 
 # quantum client
-QUANTUM_CLIENT_REPO=${GIT_BASE}/openstack/python-quantumclient
-QUANTUM_CLIENT_BRANCH=master
+QUANTUMCLIENT_REPO=${GIT_BASE}/openstack/python-quantumclient
+QUANTUMCLIENT_BRANCH=master
 
 # Tempest test suite
 TEMPEST_REPO=${GIT_BASE}/openstack/tempest.git
 TEMPEST_BRANCH=master
 
 # heat service
-HEAT_REPO=${GIT_BASE}/heat-api/heat.git
+HEAT_REPO=${GIT_BASE}/openstack/heat.git
 HEAT_BRANCH=master
+
+# python heat client library
+HEATCLIENT_REPO=${GIT_BASE}/openstack/python-heatclient.git
+HEATCLIENT_BRANCH=master
 
 # ryu service
 RYU_REPO=https://github.com/osrg/ryu.git
 RYU_BRANCH=master
+
+# diskimage-builder
+BM_IMAGE_BUILD_REPO=https://github.com/stackforge/diskimage-builder.git
+BM_IMAGE_BUILD_BRANCH=master
+
+# bm_poseur
+# Used to simulate a hardware environment for baremetal
+# Only used if BM_USE_FAKE_ENV is set
+BM_POSEUR_REPO=https://github.com/tripleo/bm_poseur.git
+BM_POSEUR_BRANCH=master
+
 
 # Nova hypervisor configuration.  We default to libvirt with **kvm** but will
 # drop back to **qemu** if we are unable to load the kvm module.  ``stack.sh`` can
@@ -136,10 +168,10 @@ fi
 #IMAGE_URLS="http://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img" # cirros full disk image
 
 # Set default image based on ``VIRT_DRIVER`` and ``LIBVIRT_TYPE``, either of
-# which may be set in ``localrc``.  Also allow ``DEFAULT_IMAGE_NAME`` and 
+# which may be set in ``localrc``.  Also allow ``DEFAULT_IMAGE_NAME`` and
 # ``IMAGE_URLS`` to be set directly in ``localrc``.
 case "$VIRT_DRIVER" in
-    openvz) 
+    openvz)
         DEFAULT_IMAGE_NAME=${DEFAULT_IMAGE_NAME:-ubuntu-11.10-x86_64}
         IMAGE_URLS=${IMAGE_URLS:-"http://download.openvz.org/template/precreated/ubuntu-11.10-x86_64.tar.gz"};;
     libvirt)
@@ -159,3 +191,6 @@ esac
 
 # 5Gb default volume backing file size
 VOLUME_BACKING_FILE_SIZE=${VOLUME_BACKING_FILE_SIZE:-5130M}
+
+PRIVATE_NETWORK_NAME=${PRIVATE_NETWORK_NAME:-"private"}
+PUBLIC_NETWORK_NAME=${PUBLIC_NETWORK_NAME:-"nova"}

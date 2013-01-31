@@ -2,14 +2,14 @@
 
 # **volumes.sh**
 
-# Test nova volumes with the nova command from python-novaclient
+# Test cinder volumes with the cinder command from python-cinderclient
 
 echo "*********************************************************************"
 echo "Begin DevStack Exercise: $0"
 echo "*********************************************************************"
 
 # This script exits on an error so that errors don't compound and you see
-# only the first error that occured.
+# only the first error that occurred.
 set -o errexit
 
 # Print the commands being run so that we can see the command that triggers
@@ -30,12 +30,17 @@ source $TOP_DIR/functions
 # Import configuration
 source $TOP_DIR/openrc
 
+# Import quantum functions if needed
+if is_service_enabled quantum; then
+    source $TOP_DIR/lib/quantum
+fi
+
 # Import exercise configuration
 source $TOP_DIR/exerciserc
 
-# If cinder or n-vol are not enabled we exit with exitcode 55 which mean
+# If cinder is not enabled we exit with exitcode 55 which mean
 # exercise is skipped.
-is_service_enabled cinder n-vol || exit 55
+is_service_enabled cinder || exit 55
 
 # Instance type to create
 DEFAULT_INSTANCE_TYPE=${DEFAULT_INSTANCE_TYPE:-m1.tiny}
@@ -81,8 +86,12 @@ if ! nova secgroup-list | grep -q $SECGROUP; then
 fi
 
 # Configure Security Group Rules
-nova secgroup-add-rule $SECGROUP icmp -1 -1 0.0.0.0/0
-nova secgroup-add-rule $SECGROUP tcp 22 22 0.0.0.0/0
+if ! nova secgroup-list-rules $SECGROUP | grep -q icmp; then
+    nova secgroup-add-rule $SECGROUP icmp -1 -1 0.0.0.0/0
+fi
+if ! nova secgroup-list-rules $SECGROUP | grep -q " tcp .* 22 "; then
+    nova secgroup-add-rule $SECGROUP tcp 22 22 0.0.0.0/0
+fi
 
 # determinine instance type
 # -------------------------
@@ -119,23 +128,11 @@ if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova show $VM_UUID | grep status | g
 fi
 
 # get the IP of the server
-IP=`nova show $VM_UUID | grep "private network" | get_field 2`
+IP=`nova show $VM_UUID | grep "$PRIVATE_NETWORK_NAME" | get_field 2`
 die_if_not_set IP "Failure retrieving IP address"
 
 # for single node deployments, we can ping private ips
-MULTI_HOST=`trueorfalse False $MULTI_HOST`
-if [ "$MULTI_HOST" = "False" ]; then
-    # sometimes the first ping fails (10 seconds isn't enough time for the VM's
-    # network to respond?), so let's ping for a default of 15 seconds with a
-    # timeout of a second for each ping.
-    if ! timeout $BOOT_TIMEOUT sh -c "while ! ping -c1 -w1 $IP; do sleep 1; done"; then
-        echo "Couldn't ping server"
-        exit 1
-    fi
-else
-    # On a multi-host system, without vm net access, do a sleep to wait for the boot
-    sleep $BOOT_TIMEOUT
-fi
+ping_check "$PRIVATE_NETWORK_NAME" $IP $BOOT_TIMEOUT
 
 # Volumes
 # -------
@@ -143,28 +140,28 @@ fi
 VOL_NAME="myvol-$(openssl rand -hex 4)"
 
 # Verify it doesn't exist
-if [[ -n "`nova volume-list | grep $VOL_NAME | head -1 | get_field 2`" ]]; then
+if [[ -n "`cinder list | grep $VOL_NAME | head -1 | get_field 2`" ]]; then
     echo "Volume $VOL_NAME already exists"
     exit 1
 fi
 
 # Create a new volume
-nova volume-create --display_name $VOL_NAME --display_description "test volume: $VOL_NAME" 1
+cinder create --display_name $VOL_NAME --display_description "test volume: $VOL_NAME" $DEFAULT_VOLUME_SIZE
 if [[ $? != 0 ]]; then
     echo "Failure creating volume $VOL_NAME"
     exit 1
 fi
 
 start_time=`date +%s`
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME | grep available; do sleep 1; done"; then
+if ! timeout $ACTIVE_TIMEOUT sh -c "while ! cinder list | grep $VOL_NAME | grep available; do sleep 1; done"; then
     echo "Volume $VOL_NAME not created"
     exit 1
 fi
 end_time=`date +%s`
-echo "Completed volume-create in $((end_time - start_time)) seconds"
+echo "Completed cinder create in $((end_time - start_time)) seconds"
 
 # Get volume ID
-VOL_ID=`nova volume-list | grep $VOL_NAME | head -1 | get_field 1`
+VOL_ID=`cinder list | grep $VOL_NAME | head -1 | get_field 1`
 die_if_not_set VOL_ID "Failure retrieving volume ID for $VOL_NAME"
 
 # Attach to server
@@ -172,14 +169,14 @@ DEVICE=/dev/vdb
 start_time=`date +%s`
 nova volume-attach $VM_UUID $VOL_ID $DEVICE || \
     die "Failure attaching volume $VOL_NAME to $NAME"
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME | grep in-use; do sleep 1; done"; then
+if ! timeout $ACTIVE_TIMEOUT sh -c "while ! cinder list | grep $VOL_NAME | grep in-use; do sleep 1; done"; then
     echo "Volume $VOL_NAME not attached to $NAME"
     exit 1
 fi
 end_time=`date +%s`
 echo "Completed volume-attach in $((end_time - start_time)) seconds"
 
-VOL_ATTACH=`nova volume-list | grep $VOL_NAME | head -1 | get_field -1`
+VOL_ATTACH=`cinder list | grep $VOL_NAME | head -1 | get_field -1`
 die_if_not_set VOL_ATTACH "Failure retrieving $VOL_NAME status"
 if [[ "$VOL_ATTACH" != $VM_UUID ]]; then
     echo "Volume not attached to correct instance"
@@ -189,7 +186,7 @@ fi
 # Detach volume
 start_time=`date +%s`
 nova volume-detach $VM_UUID $VOL_ID || die "Failure detaching volume $VOL_NAME from $NAME"
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME | grep available; do sleep 1; done"; then
+if ! timeout $ACTIVE_TIMEOUT sh -c "while ! cinder list | grep $VOL_NAME | grep available; do sleep 1; done"; then
     echo "Volume $VOL_NAME not detached from $NAME"
     exit 1
 fi
@@ -198,13 +195,13 @@ echo "Completed volume-detach in $((end_time - start_time)) seconds"
 
 # Delete volume
 start_time=`date +%s`
-nova volume-delete $VOL_ID || die "Failure deleting volume $VOL_NAME"
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME; do sleep 1; done"; then
+cinder delete $VOL_ID || die "Failure deleting volume $VOL_NAME"
+if ! timeout $ACTIVE_TIMEOUT sh -c "while cinder list | grep $VOL_NAME; do sleep 1; done"; then
     echo "Volume $VOL_NAME not deleted"
     exit 1
 fi
 end_time=`date +%s`
-echo "Completed volume-delete in $((end_time - start_time)) seconds"
+echo "Completed cinder delete in $((end_time - start_time)) seconds"
 
 # Shutdown the server
 nova delete $VM_UUID || die "Failure deleting instance $NAME"

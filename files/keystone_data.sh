@@ -2,18 +2,12 @@
 #
 # Initial data for Keystone using python-keystoneclient
 #
-# Tenant               User      Roles
+# Tenant               User       Roles
 # ------------------------------------------------------------------
-# admin                admin     admin
-# service              glance    admin
-# service              nova      admin, [ResellerAdmin (swift only)]
-# service              quantum   admin        # if enabled
-# service              swift     admin        # if enabled
-# service              cinder    admin        # if enabled
-# service              heat      admin        # if enabled
-# demo                 admin     admin
-# demo                 demo      Member, anotherrole
-# invisible_to_admin   demo      Member
+# service              glance     admin
+# service              swift      admin        # if enabled
+# service              heat       admin        # if enabled
+# service              ceilometer admin        # if enabled
 # Tempest Only:
 # alt_demo             alt_demo  Member
 #
@@ -39,120 +33,33 @@ function get_id () {
     echo `"$@" | awk '/ id / { print $4 }'`
 }
 
-
-# Tenants
-# -------
-
-ADMIN_TENANT=$(get_id keystone tenant-create --name=admin)
-SERVICE_TENANT=$(get_id keystone tenant-create --name=$SERVICE_TENANT_NAME)
-DEMO_TENANT=$(get_id keystone tenant-create --name=demo)
-INVIS_TENANT=$(get_id keystone tenant-create --name=invisible_to_admin)
-
-
-# Users
-# -----
-
-ADMIN_USER=$(get_id keystone user-create --name=admin \
-                                         --pass="$ADMIN_PASSWORD" \
-                                         --email=admin@example.com)
-DEMO_USER=$(get_id keystone user-create --name=demo \
-                                        --pass="$ADMIN_PASSWORD" \
-                                        --email=demo@example.com)
+# Lookups
+SERVICE_TENANT=$(keystone tenant-list | awk "/ $SERVICE_TENANT_NAME / { print \$2 }")
+ADMIN_ROLE=$(keystone role-list | awk "/ admin / { print \$2 }")
+MEMBER_ROLE=$(keystone role-list | awk "/ Member / { print \$2 }")
 
 
 # Roles
 # -----
 
-ADMIN_ROLE=$(get_id keystone role-create --name=admin)
-KEYSTONEADMIN_ROLE=$(get_id keystone role-create --name=KeystoneAdmin)
-KEYSTONESERVICE_ROLE=$(get_id keystone role-create --name=KeystoneServiceAdmin)
-# ANOTHER_ROLE demonstrates that an arbitrary role may be created and used
-# TODO(sleepsonthefloor): show how this can be used for rbac in the future!
-ANOTHER_ROLE=$(get_id keystone role-create --name=anotherrole)
-
-
-# Add Roles to Users in Tenants
-keystone user-role-add --user_id $ADMIN_USER --role_id $ADMIN_ROLE --tenant_id $ADMIN_TENANT
-keystone user-role-add --user_id $ADMIN_USER --role_id $ADMIN_ROLE --tenant_id $DEMO_TENANT
-keystone user-role-add --user_id $DEMO_USER --role_id $ANOTHER_ROLE --tenant_id $DEMO_TENANT
-
-# TODO(termie): these two might be dubious
-keystone user-role-add --user_id $ADMIN_USER --role_id $KEYSTONEADMIN_ROLE --tenant_id $ADMIN_TENANT
-keystone user-role-add --user_id $ADMIN_USER --role_id $KEYSTONESERVICE_ROLE --tenant_id $ADMIN_TENANT
-
-
-# The Member role is used by Horizon and Swift so we need to keep it:
-MEMBER_ROLE=$(get_id keystone role-create --name=Member)
-keystone user-role-add --user_id $DEMO_USER --role_id $MEMBER_ROLE --tenant_id $DEMO_TENANT
-keystone user-role-add --user_id $DEMO_USER --role_id $MEMBER_ROLE --tenant_id $INVIS_TENANT
+# The ResellerAdmin role is used by Nova and Ceilometer so we need to keep it.
+# The admin role in swift allows a user to act as an admin for their tenant,
+# but ResellerAdmin is needed for a user to act as any tenant. The name of this
+# role is also configurable in swift-proxy.conf
+RESELLER_ROLE=$(get_id keystone role-create --name=ResellerAdmin)
 
 
 # Services
 # --------
 
-# Keystone
-if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-	KEYSTONE_SERVICE=$(get_id keystone service-create \
-		--name=keystone \
-		--type=identity \
-		--description="Keystone Identity Service")
-	keystone endpoint-create \
-	    --region RegionOne \
-		--service_id $KEYSTONE_SERVICE \
-		--publicurl "http://$SERVICE_HOST:\$(public_port)s/v2.0" \
-		--adminurl "http://$SERVICE_HOST:\$(admin_port)s/v2.0" \
-		--internalurl "http://$SERVICE_HOST:\$(public_port)s/v2.0"
-fi
-
-# Nova
-if [[ "$ENABLED_SERVICES" =~ "n-cpu" ]]; then
-    NOVA_USER=$(get_id keystone user-create \
-        --name=nova \
-        --pass="$SERVICE_PASSWORD" \
-        --tenant_id $SERVICE_TENANT \
-        --email=nova@example.com)
-    keystone user-role-add \
-        --tenant_id $SERVICE_TENANT \
-        --user_id $NOVA_USER \
-        --role_id $ADMIN_ROLE
-    if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-        NOVA_SERVICE=$(get_id keystone service-create \
-            --name=nova \
-            --type=compute \
-            --description="Nova Compute Service")
-        keystone endpoint-create \
-            --region RegionOne \
-            --service_id $NOVA_SERVICE \
-            --publicurl "http://$SERVICE_HOST:\$(compute_port)s/v2/\$(tenant_id)s" \
-            --adminurl "http://$SERVICE_HOST:\$(compute_port)s/v2/\$(tenant_id)s" \
-            --internalurl "http://$SERVICE_HOST:\$(compute_port)s/v2/\$(tenant_id)s"
-    fi
+if [[ "$ENABLED_SERVICES" =~ "n-api" ]] && [[ "$ENABLED_SERVICES" =~ "swift" ]]; then
+    NOVA_USER=$(keystone user-list | awk "/ nova / { print \$2 }")
     # Nova needs ResellerAdmin role to download images when accessing
-    # swift through the s3 api. The admin role in swift allows a user
-    # to act as an admin for their tenant, but ResellerAdmin is needed
-    # for a user to act as any tenant. The name of this role is also
-    # configurable in swift-proxy.conf
-    RESELLER_ROLE=$(get_id keystone role-create --name=ResellerAdmin)
+    # swift through the s3 api.
     keystone user-role-add \
         --tenant_id $SERVICE_TENANT \
         --user_id $NOVA_USER \
         --role_id $RESELLER_ROLE
-fi
-
-# Volume
-if [[ "$ENABLED_SERVICES" =~ "n-vol" ]]; then
-    if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-        VOLUME_SERVICE=$(get_id keystone service-create \
-            --name=volume \
-            --type=volume \
-            --description="Volume Service")
-        keystone endpoint-create \
-            --region RegionOne \
-            --service_id $VOLUME_SERVICE \
-            --publicurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s" \
-            --adminurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s" \
-            --internalurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s"
-    fi
 fi
 
 # Heat
@@ -164,6 +71,8 @@ if [[ "$ENABLED_SERVICES" =~ "heat" ]]; then
     keystone user-role-add --tenant_id $SERVICE_TENANT \
                            --user_id $HEAT_USER \
                            --role_id $ADMIN_ROLE
+    # heat_stack_user role is for users created by Heat
+    keystone role-create --name heat_stack_user
     if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
         HEAT_CFN_SERVICE=$(get_id keystone service-create \
             --name=heat-cfn \
@@ -238,27 +147,29 @@ if [[ "$ENABLED_SERVICES" =~ "swift" ]]; then
     fi
 fi
 
-if [[ "$ENABLED_SERVICES" =~ "q-svc" ]]; then
-    QUANTUM_USER=$(get_id keystone user-create \
-        --name=quantum \
-        --pass="$SERVICE_PASSWORD" \
-        --tenant_id $SERVICE_TENANT \
-        --email=quantum@example.com)
-    keystone user-role-add \
-        --tenant_id $SERVICE_TENANT \
-        --user_id $QUANTUM_USER \
-        --role_id $ADMIN_ROLE
+if [[ "$ENABLED_SERVICES" =~ "ceilometer" ]]; then
+    CEILOMETER_USER=$(get_id keystone user-create --name=ceilometer \
+                                              --pass="$SERVICE_PASSWORD" \
+                                              --tenant_id $SERVICE_TENANT \
+                                              --email=ceilometer@example.com)
+    keystone user-role-add --tenant_id $SERVICE_TENANT \
+                           --user_id $CEILOMETER_USER \
+                           --role_id $ADMIN_ROLE
+    # Ceilometer needs ResellerAdmin role to access swift account stats.
+    keystone user-role-add --tenant_id $SERVICE_TENANT \
+                           --user_id $CEILOMETER_USER \
+                           --role_id $RESELLER_ROLE
     if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-        QUANTUM_SERVICE=$(get_id keystone service-create \
-            --name=quantum \
-            --type=network \
-            --description="Quantum Service")
+        CEILOMETER_SERVICE=$(get_id keystone service-create \
+            --name=ceilometer \
+            --type=metering \
+            --description="Ceilometer Service")
         keystone endpoint-create \
             --region RegionOne \
-            --service_id $QUANTUM_SERVICE \
-            --publicurl "http://$SERVICE_HOST:9696/" \
-            --adminurl "http://$SERVICE_HOST:9696/" \
-            --internalurl "http://$SERVICE_HOST:9696/"
+            --service_id $CEILOMETER_SERVICE \
+            --publicurl "http://$SERVICE_HOST:8777/" \
+            --adminurl "http://$SERVICE_HOST:8777/" \
+            --internalurl "http://$SERVICE_HOST:8777/"
     fi
 fi
 
@@ -308,26 +219,3 @@ if [[ "$ENABLED_SERVICES" =~ "tempest" ]]; then
         --user_id $ALT_DEMO_USER \
         --role_id $MEMBER_ROLE
 fi
-
-if [[ "$ENABLED_SERVICES" =~ "c-api" ]]; then
-    CINDER_USER=$(get_id keystone user-create --name=cinder \
-                                              --pass="$SERVICE_PASSWORD" \
-                                              --tenant_id $SERVICE_TENANT \
-                                              --email=cinder@example.com)
-    keystone user-role-add --tenant_id $SERVICE_TENANT \
-                           --user_id $CINDER_USER \
-                           --role_id $ADMIN_ROLE
-    if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-        CINDER_SERVICE=$(get_id keystone service-create \
-            --name=cinder \
-            --type=volume \
-            --description="Cinder Service")
-        keystone endpoint-create \
-            --region RegionOne \
-            --service_id $CINDER_SERVICE \
-            --publicurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s" \
-            --adminurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s" \
-            --internalurl "http://$SERVICE_HOST:8776/v1/\$(tenant_id)s"
-    fi
-fi
-

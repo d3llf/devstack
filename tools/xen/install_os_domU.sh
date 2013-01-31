@@ -57,8 +57,8 @@ then
 fi
 
 # get nova
-nova_zipball=$(echo $NOVA_REPO | sed "s:\.git$::;s:$:/zipball/$NOVA_BRANCH:g")
-wget $nova_zipball -O nova-zipball --no-check-certificate
+NOVA_ZIPBALL_URL=${NOVA_ZIPBALL_URL:-$(echo $NOVA_REPO | sed "s:\.git$::;s:$:/zipball/$NOVA_BRANCH:g")}
+wget $NOVA_ZIPBALL_URL -O nova-zipball --no-check-certificate
 unzip -o nova-zipball  -d ./nova
 
 # install xapi plugins
@@ -68,6 +68,19 @@ if [ ! -d $XAPI_PLUGIN_DIR ]; then
     XAPI_PLUGIN_DIR=/usr/lib/xcp/plugins/
 fi
 cp -pr ./nova/*/plugins/xenserver/xenapi/etc/xapi.d/plugins/* $XAPI_PLUGIN_DIR
+
+# Install the netwrap xapi plugin to support agent control of dom0 networking
+if [[ "$ENABLED_SERVICES" =~ "q-agt" && "$Q_PLUGIN" = "openvswitch" ]]; then
+    if [ -f ./quantum ]; then
+        rm -rf ./quantum
+    fi
+    # get quantum
+    QUANTUM_ZIPBALL_URL=${QUANTUM_ZIPBALL_URL:-$(echo $QUANTUM_REPO | sed "s:\.git$::;s:$:/zipball/$QUANTUM_BRANCH:g")}
+    wget $QUANTUM_ZIPBALL_URL -O quantum-zipball --no-check-certificate
+    unzip -o quantum-zipball  -d ./quantum
+    cp -pr ./quantum/*/quantum/plugins/openvswitch/agent/xenapi/etc/xapi.d/plugins/* $XAPI_PLUGIN_DIR
+fi
+
 chmod a+x ${XAPI_PLUGIN_DIR}*
 
 mkdir -p /boot/guest
@@ -376,35 +389,22 @@ if [ "$WAIT_TILL_LAUNCH" = "1" ]  && [ -e ~/.ssh/id_rsa.pub  ] && [ "$COPYENV" =
         sleep 10
     done
 
-    # output the run.sh.log
-    ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no stack@$DOMU_IP 'tail -f run.sh.log' &
-    TAIL_PID=$!
-
-    function kill_tail() {
-        kill -9 $TAIL_PID
-        exit 1
-    }
-    # Let Ctrl-c kill tail and exit
-    trap kill_tail SIGINT
-
-    # ensure we kill off the tail if we exit the script early
-    # for other reasons
-    add_on_exit "kill -9 $TAIL_PID || true"
-
-    # wait silently until stack.sh has finished
-    set +o xtrace
-    while ! ssh_no_check -q stack@$DOMU_IP "tail run.sh.log | grep -q 'stack.sh completed in'"; do
+    set +x
+    echo -n "Waiting for startup script to finish"
+    while [ `ssh_no_check -q stack@$DOMU_IP pgrep -c run.sh` -ge 1 ]
+    do
         sleep 10
+        echo -n "."
     done
-    set -o xtrace
+    echo "done!"
+    set -x
 
-    # kill the tail process now stack.sh has finished
-    kill -9 $TAIL_PID
+    # output the run.sh.log
+    ssh_no_check -q stack@$DOMU_IP 'cat run.sh.log'
 
-    # check for a failure
-    if ssh_no_check -q stack@$DOMU_IP "grep -q 'stack.sh failed' run.sh.log"; then
-        exit 1
-    fi
+    # Fail if the expected text is not found
+    ssh_no_check -q stack@$DOMU_IP 'cat run.sh.log' | grep -q 'stack.sh completed in'
+
     echo "################################################################################"
     echo ""
     echo "All Finished!"

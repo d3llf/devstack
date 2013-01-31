@@ -1,11 +1,12 @@
 # lib/glance
-# Functions to control the configuration and operation of the Glance service
+# Functions to control the configuration and operation of the **Glance** service
 
 # Dependencies:
 # ``functions`` file
-# ``DEST``, ``DATA_DIR`` must be defined
+# ``DEST``, ``DATA_DIR``, ``STACK_USER`` must be defined
 # ``SERVICE_{TENANT_NAME|PASSWORD}`` must be defined
 # ``SERVICE_HOST``
+# ``KEYSTONE_TOKEN_FORMAT`` must be defined
 
 # ``stack.sh`` calls the entry points in this order:
 #
@@ -24,14 +25,13 @@ set +o xtrace
 # Defaults
 # --------
 
-# <define global variables here that belong to this project>
-
 # Set up default directories
 GLANCE_DIR=$DEST/glance
 GLANCE_BIN_DIR=$GLANCE_DIR/bin
 GLANCECLIENT_DIR=$DEST/python-glanceclient
 GLANCE_CACHE_DIR=${GLANCE_CACHE_DIR:=$DATA_DIR/glance/cache}
 GLANCE_IMAGE_DIR=${GLANCE_IMAGE_DIR:=$DATA_DIR/glance/images}
+GLANCE_AUTH_CACHE_DIR=${GLANCE_AUTH_CACHE_DIR:-/var/cache/glance}
 
 GLANCE_CONF_DIR=${GLANCE_CONF_DIR:-/etc/glance}
 GLANCE_REGISTRY_CONF=$GLANCE_CONF_DIR/glance-registry.conf
@@ -76,13 +76,15 @@ function configure_glance() {
     if [[ ! -d $GLANCE_CONF_DIR ]]; then
         sudo mkdir -p $GLANCE_CONF_DIR
     fi
-    sudo chown `whoami` $GLANCE_CONF_DIR
+    sudo chown $STACK_USER $GLANCE_CONF_DIR
 
     # Copy over our glance configurations and update them
     cp $GLANCE_DIR/etc/glance-registry.conf $GLANCE_REGISTRY_CONF
     iniset $GLANCE_REGISTRY_CONF DEFAULT debug True
     inicomment $GLANCE_REGISTRY_CONF DEFAULT log_file
-    iniset $GLANCE_REGISTRY_CONF DEFAULT sql_connection $BASE_SQL_CONN/glance?charset=utf8
+    local dburl
+    database_connection_url dburl glance
+    iniset $GLANCE_REGISTRY_CONF DEFAULT sql_connection $dburl
     iniset $GLANCE_REGISTRY_CONF DEFAULT use_syslog $SYSLOG
     iniset $GLANCE_REGISTRY_CONF paste_deploy flavor keystone
     iniset $GLANCE_REGISTRY_CONF keystone_authtoken auth_host $KEYSTONE_AUTH_HOST
@@ -92,11 +94,12 @@ function configure_glance() {
     iniset $GLANCE_REGISTRY_CONF keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
     iniset $GLANCE_REGISTRY_CONF keystone_authtoken admin_user glance
     iniset $GLANCE_REGISTRY_CONF keystone_authtoken admin_password $SERVICE_PASSWORD
+    iniset $GLANCE_REGISTRY_CONF keystone_authtoken signing_dir $GLANCE_AUTH_CACHE_DIR/registry
 
     cp $GLANCE_DIR/etc/glance-api.conf $GLANCE_API_CONF
     iniset $GLANCE_API_CONF DEFAULT debug True
     inicomment $GLANCE_API_CONF DEFAULT log_file
-    iniset $GLANCE_API_CONF DEFAULT sql_connection $BASE_SQL_CONN/glance?charset=utf8
+    iniset $GLANCE_API_CONF DEFAULT sql_connection $dburl
     iniset $GLANCE_API_CONF DEFAULT use_syslog $SYSLOG
     iniset $GLANCE_API_CONF DEFAULT filesystem_store_datadir $GLANCE_IMAGE_DIR/
     iniset $GLANCE_API_CONF DEFAULT image_cache_dir $GLANCE_CACHE_DIR/
@@ -115,6 +118,7 @@ function configure_glance() {
         iniset $GLANCE_API_CONF DEFAULT rabbit_host $RABBIT_HOST
         iniset $GLANCE_API_CONF DEFAULT rabbit_password $RABBIT_PASSWORD
     fi
+    iniset $GLANCE_API_CONF keystone_authtoken signing_dir $GLANCE_AUTH_CACHE_DIR/api
 
     cp -p $GLANCE_DIR/etc/glance-registry-paste.ini $GLANCE_REGISTRY_PASTE_INI
 
@@ -136,7 +140,6 @@ function configure_glance() {
     iniset $GLANCE_CACHE_CONF DEFAULT admin_password $SERVICE_PASSWORD
 
     cp -p $GLANCE_DIR/etc/policy.json $GLANCE_POLICY_JSON
-
 }
 
 # init_glance() - Initialize databases, etc.
@@ -150,10 +153,17 @@ function init_glance() {
     mkdir -p $GLANCE_CACHE_DIR
 
     # (re)create glance database
-    mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e 'DROP DATABASE IF EXISTS glance;'
-    mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e 'CREATE DATABASE glance CHARACTER SET utf8;'
+    recreate_database glance utf8
 
     $GLANCE_BIN_DIR/glance-manage db_sync
+
+    # Create cache dir
+    sudo mkdir -p $GLANCE_AUTH_CACHE_DIR/api
+    sudo chown $STACK_USER $GLANCE_AUTH_CACHE_DIR/api
+    rm -f $GLANCE_AUTH_CACHE_DIR/api/*
+    sudo mkdir -p $GLANCE_AUTH_CACHE_DIR/registry
+    sudo chown $STACK_USER $GLANCE_AUTH_CACHE_DIR/registry
+    rm -f $GLANCE_AUTH_CACHE_DIR/registry/*
 }
 
 # install_glanceclient() - Collect source and prepare

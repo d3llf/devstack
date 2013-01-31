@@ -33,6 +33,11 @@ source $TOP_DIR/functions
 # Import EC2 configuration
 source $TOP_DIR/eucarc
 
+# Import quantum functions if needed
+if is_service_enabled quantum; then
+    source $TOP_DIR/lib/quantum
+fi
+
 # Import exercise configuration
 source $TOP_DIR/exerciserc
 
@@ -73,7 +78,7 @@ fi
 
 # Volumes
 # -------
-if [[ "$ENABLED_SERVICES" =~ "n-vol" || "$ENABLED_SERVICES" =~ "c-vol" ]]; then
+if [[ "$ENABLED_SERVICES" =~ "c-vol" ]]; then
    VOLUME_ZONE=`euca-describe-availability-zones | head -n1 | cut -f2`
    die_if_not_set VOLUME_ZONE "Failure to find zone for volume"
 
@@ -85,7 +90,7 @@ if [[ "$ENABLED_SERVICES" =~ "n-vol" || "$ENABLED_SERVICES" =~ "c-vol" ]]; then
    die_if_not_set VOLUME "Failure to get volume"
 
    # Test volume has become available
-   if ! timeout $ASSOCIATE_TIMEOUT sh -c "while ! euca-describe-volumes $VOLUME | grep -q available; do sleep 1; done"; then
+   if ! timeout $RUNNING_TIMEOUT sh -c "while ! euca-describe-volumes $VOLUME | grep -q available; do sleep 1; done"; then
        echo "volume didnt become available within $RUNNING_TIMEOUT seconds"
        exit 1
    fi
@@ -130,10 +135,7 @@ euca-authorize -P icmp -s 0.0.0.0/0 -t -1:-1 $SECGROUP || \
     die "Failure authorizing rule in $SECGROUP"
 
 # Test we can ping our floating ip within ASSOCIATE_TIMEOUT seconds
-if ! timeout $ASSOCIATE_TIMEOUT sh -c "while ! ping -c1 -w1 $FLOATING_IP; do sleep 1; done"; then
-    echo "Couldn't ping server with floating ip"
-    exit 1
-fi
+ping_check "$PUBLIC_NETWORK_NAME" $FLOATING_IP $ASSOCIATE_TIMEOUT
 
 # Revoke pinging
 euca-revoke -P icmp -s 0.0.0.0/0 -t -1:-1 $SECGROUP || \
@@ -163,8 +165,11 @@ fi
 euca-terminate-instances $INSTANCE || \
     die "Failure terminating instance $INSTANCE"
 
-# Assure it has terminated within a reasonable time
-if ! timeout $TERMINATE_TIMEOUT sh -c "while euca-describe-instances $INSTANCE | grep -q $INSTANCE; do sleep 1; done"; then
+# Assure it has terminated within a reasonable time. The behaviour of this
+# case changed with bug/836978. Requesting the status of an invalid instance
+# will now return an error message including the instance id, so we need to
+# filter that out.
+if ! timeout $TERMINATE_TIMEOUT sh -c "while euca-describe-instances $INSTANCE | grep -ve \"\\\(InstanceNotFound\\\|InvalidInstanceID\[.\]NotFound\\\)\" | grep -q $INSTANCE; do sleep 1; done"; then
     echo "server didn't terminate within $TERMINATE_TIMEOUT seconds"
     exit 1
 fi

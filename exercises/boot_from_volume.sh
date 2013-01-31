@@ -32,12 +32,17 @@ source $TOP_DIR/functions
 # Import configuration
 source $TOP_DIR/openrc
 
+# Import quantum functions if needed
+if is_service_enabled quantum; then
+    source $TOP_DIR/lib/quantum
+fi
+
 # Import exercise configuration
 source $TOP_DIR/exerciserc
 
-# If cinder or n-vol are not enabled we exit with exitcode 55 so that
+# If cinder is not enabled we exit with exitcode 55 so that
 # the exercise is skipped
-is_service_enabled cinder n-vol || exit 55
+is_service_enabled cinder || exit 55
 
 # Boot this image, use first AMI image if unset
 DEFAULT_IMAGE_NAME=${DEFAULT_IMAGE_NAME:-ami}
@@ -95,7 +100,7 @@ nova keypair-add $KEY_NAME > $KEY_FILE
 chmod 600 $KEY_FILE
 
 # Delete the old volume
-nova volume-delete $VOL_NAME || true
+cinder delete $VOL_NAME || true
 
 # Free every floating ips - setting FREE_ALL_FLOATING_IPS=True in localrc will make life easier for testers
 if [ "$FREE_ALL_FLOATING_IPS" = "True" ]; then
@@ -112,15 +117,15 @@ if ! timeout $ASSOCIATE_TIMEOUT sh -c "while ! nova floating-ip-list | grep -q $
 fi
 
 # Create the bootable volume
-nova volume-create --display_name=$VOL_NAME --image-id $IMAGE 1
+cinder create --display_name=$VOL_NAME --image-id $IMAGE $DEFAULT_VOLUME_SIZE
 
 # Wait for volume to activate
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME | grep available; do sleep 1; done"; then
+if ! timeout $ACTIVE_TIMEOUT sh -c "while ! cinder list | grep $VOL_NAME | grep available; do sleep 1; done"; then
     echo "Volume $VOL_NAME not created"
     exit 1
 fi
 
-VOLUME_ID=`nova volume-list | grep $VOL_NAME  | get_field 1`
+VOLUME_ID=`cinder list | grep $VOL_NAME  | get_field 1`
 
 # Boot instance from volume!  This is done with the --block_device_mapping param.
 # The format of mapping is:
@@ -139,16 +144,10 @@ fi
 nova add-floating-ip $VOL_VM_UUID $FLOATING_IP
 
 # Test we can ping our floating ip within ASSOCIATE_TIMEOUT seconds
-if ! timeout $ASSOCIATE_TIMEOUT sh -c "while ! ping -c1 -w1 $FLOATING_IP; do sleep 1; done"; then
-    echo "Couldn't ping volume-backed server with floating ip"
-    exit 1
-fi
+ping_check "$PUBLIC_NETWORK_NAME" $FLOATING_IP $ASSOCIATE_TIMEOUT
 
 # Make sure our volume-backed instance launched
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! ssh -o StrictHostKeyChecking=no -i $KEY_FILE ${DEFAULT_INSTANCE_USER}@$FLOATING_IP echo success ; do sleep 1; done"; then
-    echo "server didn't become ssh-able!"
-    exit 1
-fi
+ssh_check "$PUBLIC_NETWORK_NAME" $KEY_FILE $FLOATING_IP $DEFAULT_INSTANCE_USER $ACTIVE_TIMEOUT
 
 # Remove floating ip from volume-backed instance
 nova remove-floating-ip $VOL_VM_UUID $FLOATING_IP
@@ -158,13 +157,13 @@ nova delete $VOL_INSTANCE_NAME || \
     die "Failure deleting instance volume $VOL_INSTANCE_NAME"
 
 # Wait till our volume is no longer in-use
-if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova volume-list | grep $VOL_NAME | grep available; do sleep 1; done"; then
+if ! timeout $ACTIVE_TIMEOUT sh -c "while ! cinder list | grep $VOL_NAME | grep available; do sleep 1; done"; then
     echo "Volume $VOL_NAME not created"
     exit 1
 fi
 
 # Delete the volume
-nova volume-delete $VOL_NAME || \
+cinder delete $VOL_NAME || \
     die "Failure deleting volume $VOLUME_NAME"
 
 # De-allocate the floating ip

@@ -54,6 +54,12 @@ handlers = aa, bb
 
 [bbb]
 handlers=ee,ff
+
+[ ccc ]
+spaces  =  yes
+
+[ddd]
+empty =
 EOF
 
 # Test with spaces
@@ -74,6 +80,23 @@ else
     echo "iniget failed: $VAL"
 fi
 
+# Test with spaces in section header
+
+VAL=$(iniget test.ini " ccc " spaces)
+if [[ "$VAL" == "yes" ]]; then
+    echo "OK: $VAL"
+else
+    echo "iniget failed: $VAL"
+fi
+
+iniset test.ini "b b" opt_ion 42
+
+VAL=$(iniget test.ini "b b" opt_ion)
+if [[ "$VAL" == "42" ]]; then
+    echo "OK: $VAL"
+else
+    echo "iniget failed: $VAL"
+fi
 
 # Test without spaces, end of file
 
@@ -93,6 +116,29 @@ else
     echo "iniget failed: $VAL"
 fi
 
+# test empty option
+if ini_has_option test.ini ddd empty; then
+   echo "OK: ddd.empty present"
+else
+   echo "ini_has_option failed: ddd.empty not found"
+fi
+
+# test non-empty option
+if ini_has_option test.ini bbb handlers; then
+   echo "OK: bbb.handlers present"
+else
+   echo "ini_has_option failed: bbb.handlers not found"
+fi
+
+# test changing empty option
+iniset test.ini ddd empty "42"
+
+VAL=$(iniget test.ini ddd empty)
+if [[ "$VAL" == "42" ]]; then
+    echo "OK: $VAL"
+else
+    echo "iniget failed: $VAL"
+fi
 
 # Test section not exist
 
@@ -112,7 +158,6 @@ else
     echo "iniget failed: $VAL"
 fi
 
-
 # Test option not exist
 
 VAL=$(iniget test.ini aaa debug)
@@ -120,6 +165,12 @@ if [[ -z "$VAL" ]]; then
     echo "OK aaa.debug not present"
 else
     echo "iniget failed: $VAL"
+fi
+
+if ! ini_has_option test.ini aaa debug; then
+    echo "OK aaa.debug not present"
+else
+    echo "ini_has_option failed: aaa.debug"
 fi
 
 iniset test.ini aaa debug "999"
@@ -250,12 +301,14 @@ fi
 if [[ "$os_PACKAGE" = "deb" ]]; then
     is_package_installed dpkg
     VAL=$?
-elif [[ "$os_PACKAGE" = "rpm" ]];then
-    is_package_installed rpm
-    VAL=$?
 elif [[ "$os_PACKAGE" = "ebuild" ]]; then
     is_package_installed portage
     VAL=$?
+elif [[ "$os_PACKAGE" = "rpm" ]]; then
+    is_package_installed rpm
+    VAL=$?
+else
+    VAL=1
 fi
 if [[ "$VAL" -eq 0 ]]; then
     echo "OK"
@@ -272,6 +325,8 @@ elif [[ "$os_PACKAGE" = "rpm" ]]; then
 elif [[ "$os_PACKAGE" = "ebuild" ]]; then
     is_package_installed portage bash
     VAL=$?
+else
+    VAL=1
 fi
 if [[ "$VAL" -eq 0 ]]; then
     echo "OK"

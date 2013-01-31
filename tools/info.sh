@@ -88,17 +88,23 @@ done
 # - We are going to check packages only for the services needed.
 # - We are parsing the packages files and detecting metadatas.
 
-if [[ "$os_PACKAGE" = "deb" ]]; then
+if is_ubuntu; then
     PKG_DIR=$FILES/apts
-else
+elif is_fedora; then
     PKG_DIR=$FILES/rpms
+elif is_suse; then
+    PKG_DIR=$FILES/rpms-suse
+else
+    exit_distro_not_supported "list of packages"
 fi
 
 for p in $(get_packages $PKG_DIR); do
     if [[ "$os_PACKAGE" = "deb" ]]; then
         ver=$(dpkg -s $p 2>/dev/null | grep '^Version: ' | cut -d' ' -f2)
-    else
+    elif [[ "$os_PACKAGE" = "rpm" ]]; then
         ver=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}\n" $p)
+    else
+        exit_distro_not_supported "finding version of a package"
     fi
     echo "pkg|${p}|${ver}"
 done
@@ -107,11 +113,7 @@ done
 # Pips
 # ----
 
-if [[ "$os_PACKAGE" = "deb" ]]; then
-    CMD_PIP=/usr/bin/pip
-else
-    CMD_PIP=/usr/bin/pip-python
-fi
+CMD_PIP=$(get_pip_command)
 
 # Pip tells us what is currently installed
 FREEZE_FILE=$(mktemp --tmpdir freeze.XXXXXX)
